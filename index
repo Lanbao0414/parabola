@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pro Tessellation Explorer - Multi-Touch & Nested Groups</title>
+<style>
+  /* 1. LOCK THE ENTIRE PAGE TO THE SCREEN */
+  html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden; 
+    position: fixed; 
+    box-sizing: border-box;
+  }
+
+  body { 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+    display: flex; 
+    flex-direction: column; 
+    background-color: #f0f2f5; 
+    user-select: none; 
+    -webkit-user-select: none; 
+    touch-action: none; 
+  }
+  
+  *, *:before, *:after { box-sizing: inherit; }
+
+  /* 2. HEADER AREA */
+  #header-area {
+    padding: 10px 10px 5px 10px;
+    text-align: center;
+    flex-shrink: 0; 
+  }
+  h2 { color: #333; margin: 0 0 5px 0; font-size: 22px; }
+  .subtitle { color: #64748b; font-size: 13px; margin: 0; }
+  
+  /* 3. TOOLBAR */
+  #toolbar { 
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 10px auto; 
+    padding: 10px; background: white; border-radius: 8px; 
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1); align-items: center; justify-content: center;
+    max-width: 1050px; width: 95%; flex-shrink: 0; 
+    max-height: 25vh; overflow-y: auto;
+  }
+  
+  .control-group {
+    display: flex; gap: 6px; align-items: center; border-right: 2px solid #e2e8f0; padding-right: 8px;
+    flex-wrap: wrap; justify-content: center;
+  }
+  .control-group:last-child { border-right: none; padding-right: 0; }
+
+  button, select, input { 
+    padding: 8px 12px; 
+    border: 1px solid #ccc; border-radius: 6px; 
+    cursor: pointer; background: #fff; font-size: 14px; transition: all 0.2s;
+  }
+  button:hover, select:hover { background: #e2e8f0; }
+  
+  .mode-btn { background: #f8fafc; color: #475569; }
+  .mode-btn.active { background: #3b82f6; color: white; border-color: #2563eb; }
+  .action-btn { background: #10b981; color: white; border-color: #059669; font-weight: bold; }
+  .action-btn:hover { background: #059669; }
+  .action-btn.danger { background: #f59e0b; border-color: #d97706; }
+  .action-btn.danger:hover { background: #d97706; }
+  .action-btn.copy { background: #8b5cf6; border-color: #7c3aed; }
+  .action-btn.copy:hover { background: #7c3aed; }
+  input[type="color"] { padding: 0; width: 36px; height: 36px; border: none; background: none; cursor: pointer;}
+  
+  /* 4. CANVAS AREA */
+  #canvas-container {
+    flex-grow: 1; 
+    width: 100%;
+    padding: 0 10px 10px 10px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 0; 
+  }
+
+  svg { 
+    width: 100%; 
+    height: 100%; 
+    background-color: white; border: 2px solid #cbd5e1; border-radius: 8px; 
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05); cursor: default; overflow: hidden;
+    touch-action: none;
+  }
+  
+  .shape { cursor: pointer; stroke: #334155; stroke-width: 2; transition: filter 0.1s; }
+  .shape:hover { filter: brightness(0.9); }
+  
+  /* Highlight selected shapes */
+  .shape.selected > polygon, polygon.shape.selected { stroke: #ef4444; stroke-width: 3; stroke-dasharray: 4; }
+</style>
+</head>
+<body>
+
+<div id="header-area">
+  <h2>Pro Tessellation Explorer</h2>
+  <div class="subtitle">Multi-Touch Zoom, Canvas Panning, and Nested Grouping!</div>
+</div>
+
+<div id="toolbar">
+  <div class="control-group">
+    <select id="shapeSelect">
+      <option value="3">Triangle (3)</option>
+      <option value="4">Quadrilateral (4)</option>
+      <option value="5">Pentagon (5)</option>
+      <option value="6">Hexagon (6)</option>
+      <option value="7">Heptagon (7)</option>
+      <option value="8">Octagon (8)</option>
+      <option value="9">Nonagon (9)</option>
+      <option value="10">Decagon (10)</option>
+      <option value="11">Hendecagon (11)</option>
+      <option value="12">Dodecagon (12)</option>
+    </select>
+    <button onclick="addShape()">➕ Add</button>
+  </div>
+
+  <div class="control-group">
+    <button id="btnMove" class="mode-btn active" onclick="setMode('move')">🖐️ Move</button>
+    <button id="btnSelect" class="mode-btn" onclick="setMode('select')">👆 Select</button>
+    <button id="btnPaint" class="mode-btn" onclick="setMode('paint')">🎨 Paint</button>
+    <input type="color" id="colorPicker" value="#3b82f6" title="Color">
+    <button id="btnErase" class="mode-btn" onclick="setMode('erase')">🧽 Erase</button>
+  </div>
+
+  <div class="control-group">
+    <button onclick="groupSelected()" class="action-btn" title="Combine selected shapes">🔗 Glue</button>
+    <button onclick="ungroupSelected()" class="action-btn danger" title="Break apart selected group">🔨 Ungroup</button>
+    <button onclick="copySelected()" class="action-btn copy" title="Duplicate selected">📄 Copy</button>
+  </div>
+
+  <div class="control-group">
+    <button onclick="undo()" title="Undo">↩️</button>
+    <button onclick="redo()" title="Redo">↪️</button>
+    <button onclick="rotateSelected(-15)">↺</button>
+    <button onclick="rotateSelected(15)">↻</button>
+  </div>
+  
+  <div class="control-group">
+    <button onclick="clearCanvas()" style="color: #ef4444;">🗑️</button>
+  </div>
+</div>
+
+<div id="canvas-container">
+  <svg id="canvas" viewBox="0 0 900 600" preserveAspectRatio="xMidYMid meet"></svg>
+</div>
+
+<script>
+  const canvas = document.getElementById('canvas');
+  const canvasContainer = document.getElementById('canvas-container');
+  const SIDE_LENGTH = 50; 
+  const SNAP_RADIUS = 20; 
+  
+  let currentMode = 'move';
+  let selectedElements = new Set();
+  
+  // Interaction states
+  let isDragging = false;
+  let activeDragElement = null;
+  let offset = { x: 0, y: 0 };
+  
+  let isPanning = false;
+  let panStart = { x: 0, y: 0 };
+
+  // ViewBox & Gestures
+  let vX = 0, vY = 0, vW = 900, vH = 600;
+  let activePointers = new Map();
+  let initialPinchDistance = null;
+  let initialViewBox = null;
+  let initialPinchCenter = null;
+
+  // --- UNDO / REDO SYSTEM ---
+  let undoStack = [];
+  let redoStack = [];
+  let dragStartState = null;
+
+  function saveState() {
+    redoStack = []; 
+    undoStack.push({ html: canvas.innerHTML, vX: vX, vY: vY, vW: vW, vH: vH });
+    if (undoStack.length > 50) undoStack.shift(); 
+  }
+
+  function restoreState(state) {
+    canvas.innerHTML = state.html;
+    vX = state.vX; vY = state.vY; vW = state.vW; vH = state.vH;
+    canvas.setAttribute('viewBox', `${vX} ${vY} ${vW} ${vH}`);
+    selectedElements.clear(); 
+    
+    // Restore nested groups safely
+    Array.from(canvas.querySelectorAll('polygon, g.shape-group')).forEach(el => {
+      el.addEventListener('pointerdown', handleShapeInteraction);
+      if (el.classList.contains('selected')) selectedElements.add(el);
+    });
+  }
+
+  function undo() {
+    if (undoStack.length === 0) return;
+    redoStack.push({ html: canvas.innerHTML, vX: vX, vY: vY, vW: vW, vH: vH });
+    restoreState(undoStack.pop());
+  }
+
+  function redo() {
+    if (redoStack.length === 0) return;
+    undoStack.push({ html: canvas.innerHTML, vX: vX, vY: vY, vW: vW, vH: vH });
+    restoreState(redoStack.pop());
+  }
+
+  function getMousePos(evt) {
+    let CTM = canvas.getScreenCTM();
+    return { x: (evt.clientX - CTM.e) / CTM.a, y: (evt.clientY - CTM.f) / CTM.d };
+  }
+
+  function generatePolygonPoints(sides) {
+    const radius = SIDE_LENGTH / (2 * Math.sin(Math.PI / sides));
+    let points = [];
+    let angleOffset = -Math.PI / 2;
+    if (sides % 2 === 0) angleOffset -= Math.PI / sides;
+    for (let i = 0; i < sides; i++) {
+      const angle = angleOffset + (i * 2 * Math.PI) / sides;
+      points.push(`${radius * Math.cos(angle)},${radius * Math.sin(angle)}`);
+    }
+    return points.join(' ');
+  }
+
+  // Universally resolves nested positions by calculating the final screen matrix
+  function getAbsoluteVertices(element) {
+    let verts = [];
+    let polygons = element.tagName.toLowerCase() === 'g' ? element.querySelectorAll('polygon') : [element];
+    let svgCTM = canvas.getScreenCTM().inverse(); 
+    
+    for(let poly of polygons) {
+      let ptsStr = poly.getAttribute('points');
+      if(!ptsStr) continue;
+      let points = ptsStr.split(' ').map(p => { let [x, y] = p.split(',').map(Number); return {x, y}; });
+      let polyCTM = poly.getScreenCTM();
+      let matrix = svgCTM.multiply(polyCTM);
+      
+      points.forEach(p => {
+        let pt = canvas.createSVGPoint(); pt.x = p.x; pt.y = p.y;
+        let transformed = pt.matrixTransform(matrix);
+        verts.push({x: transformed.x, y: transformed.y});
+      });
+    }
+    return verts;
+  }
+
+  function checkAndApplySnap(draggedShape) {
+    const draggedVerts = getAbsoluteVertices(draggedShape);
+    const otherShapes = Array.from(canvas.querySelectorAll('.shape')).filter(s => s !== draggedShape && s.parentNode === canvas);
+
+    let bestSnap = null, minDistance = SNAP_RADIUS;
+
+    for (const other of otherShapes) {
+      const otherVerts = getAbsoluteVertices(other);
+      for (const dv of draggedVerts) {
+        for (const ov of otherVerts) {
+          const dist = Math.hypot(dv.x - ov.x, dv.y - ov.y); 
+          if (dist < minDistance) {
+            minDistance = dist;
+            bestSnap = { dx: ov.x - dv.x, dy: ov.y - dv.y };
+          }
+        }
+      }
+    }
+
+    if (bestSnap) {
+      const cx = parseFloat(draggedShape.getAttribute('data-x'));
+      const cy = parseFloat(draggedShape.getAttribute('data-y'));
+      draggedShape.setAttribute('data-x', cx + bestSnap.dx);
+      draggedShape.setAttribute('data-y', cy + bestSnap.dy);
+      updateTransform(draggedShape);
+    }
+  }
+
+  function setMode(mode) {
+    currentMode = mode;
+    document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+    
+    if(mode === 'move') document.getElementById('btnMove').classList.add('active');
+    if(mode === 'select') document.getElementById('btnSelect').classList.add('active');
+    if(mode === 'paint') document.getElementById('btnPaint').classList.add('active');
+    if(mode === 'erase') document.getElementById('btnErase').classList.add('active');
+    
+    canvas.style.cursor = mode === 'select' ? 'cell' : 'default';
+    if(mode !== 'select' && mode !== 'move') clearSelection();
+  }
+
+  function addShape() {
+    saveState(); 
+    const sides = parseInt(document.getElementById('shapeSelect').value);
+    const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    polygon.setAttribute("points", generatePolygonPoints(sides));
+    polygon.setAttribute("fill", document.getElementById('colorPicker').value);
+    polygon.setAttribute("class", "shape");
+    
+    // Add to center of current view
+    polygon.setAttribute('data-x', vX + (vW / 2) + (Math.random() * 40 - 20));
+    polygon.setAttribute('data-y', vY + (vH / 2) + (Math.random() * 40 - 20));
+    polygon.setAttribute('data-angle', 0);
+    
+    updateTransform(polygon);
+    polygon.addEventListener('pointerdown', handleShapeInteraction);
+    canvas.appendChild(polygon);
+    
+    singleSelect(polygon);
+    setMode('move');
+  }
+
+  function singleSelect(el) {
+    clearSelection();
+    selectedElements.add(el); el.classList.add('selected');
+  }
+
+  function clearSelection() {
+    selectedElements.forEach(el => el.classList.remove('selected'));
+    selectedElements.clear();
+  }
+
+  function handleShapeInteraction(evt) {
+    evt.stopPropagation(); 
+    if (activePointers.size >= 2) return; // Block interactions if zooming
+
+    let el = evt.currentTarget; 
+
+    // RECURSIVE GROUP FIX: Always climb to the very top group
+    if (currentMode !== 'paint') {
+      while (el.parentNode && el.parentNode !== canvas && el.parentNode.classList.contains('shape-group')) {
+        el = el.parentNode;
+      }
+    }
+
+    if (currentMode === 'erase') { 
+      saveState();
+      el.remove(); 
+      selectedElements.delete(el);
+      return; 
+    }
+    
+    if (currentMode === 'paint') {
+      if(evt.target.tagName.toLowerCase() === 'polygon') { 
+        saveState(); 
+        evt.target.setAttribute("fill", document.getElementById('colorPicker').value); 
+      }
+      return;
+    }
+
+    if (currentMode === 'select') {
+      if (selectedElements.has(el)) {
+        selectedElements.delete(el); el.classList.remove('selected');
+      } else {
+        selectedElements.add(el); el.classList.add('selected');
+      }
+      canvas.appendChild(el);
+      return;
+    }
+
+    if (currentMode === 'move') {
+      if (!selectedElements.has(el)) singleSelect(el);
+      
+      dragStartState = { html: canvas.innerHTML, vX: vX, vY: vY, vW: vW, vH: vH };
+      isDragging = true;
+      activeDragElement = el;
+      
+      let pos = getMousePos(evt);
+      offset.x = pos.x - parseFloat(el.getAttribute('data-x'));
+      offset.y = pos.y - parseFloat(el.getAttribute('data-y'));
+      
+      el.setPointerCapture(evt.pointerId);
+    }
+  }
+
+  function groupSelected() {
+    let elements = Array.from(selectedElements).filter(el => el.parentNode === canvas);
+    if (elements.length <= 1) return; 
+    saveState(); 
+    
+    let sumX = 0, sumY = 0;
+    elements.forEach(el => {
+      sumX += parseFloat(el.getAttribute('data-x'));
+      sumY += parseFloat(el.getAttribute('data-y'));
+    });
+    let cx = sumX / elements.length;
+    let cy = sumY / elements.length;
+
+    let g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.setAttribute('class', 'shape shape-group selected');
+    g.setAttribute('data-x', cx);
+    g.setAttribute('data-y', cy);
+    g.setAttribute('data-angle', 0);
+    
+    // Elements added to the new group safely retain their inner nested groups
+    elements.forEach(el => {
+      el.classList.remove('selected');
+      el.setAttribute('data-x', parseFloat(el.getAttribute('data-x')) - cx);
+      el.setAttribute('data-y', parseFloat(el.getAttribute('data-y')) - cy);
+      updateTransform(el);
+      g.appendChild(el);
+    });
+    
+    clearSelection();
+    selectedElements.add(g);
+    updateTransform(g);
+    g.addEventListener('pointerdown', handleShapeInteraction);
+    canvas.appendChild(g);
+    setMode('move');
+  }
+
+  function ungroupSelected() {
+    let groups = Array.from(selectedElements).filter(el => el.classList.contains('shape-group'));
+    if (groups.length === 0) return;
+    saveState();
+    clearSelection();
+
+    // Peels exactly ONE layer off. Inner nested groups stay grouped!
+    groups.forEach(group => {
+      let children = Array.from(group.children);
+      let gX = parseFloat(group.getAttribute('data-x'));
+      let gY = parseFloat(group.getAttribute('data-y'));
+      let gA = parseFloat(group.getAttribute('data-angle')) * Math.PI / 180;
+      
+      children.forEach(p => {
+        let pX = parseFloat(p.getAttribute('data-x'));
+        let pY = parseFloat(p.getAttribute('data-y'));
+        let pA = parseFloat(p.getAttribute('data-angle')) || 0;
+        
+        let newX = pX * Math.cos(gA) - pY * Math.sin(gA) + gX;
+        let newY = pX * Math.sin(gA) + pY * Math.cos(gA) + gY;
+        let newA = pA + (parseFloat(group.getAttribute('data-angle')) || 0);
+        
+        p.setAttribute('data-x', newX);
+        p.setAttribute('data-y', newY);
+        p.setAttribute('data-angle', newA);
+        updateTransform(p);
+        canvas.appendChild(p);
+        
+        selectedElements.add(p);
+        p.classList.add('selected');
+      });
+      group.remove();
+    });
+    setMode('move');
+  }
+
+  function copySelected() {
+    if (selectedElements.size === 0) return;
+    saveState(); 
+    let newSelection = new Set();
+    
+    selectedElements.forEach(el => {
+      let clone = el.cloneNode(true);
+      let newX = parseFloat(el.getAttribute('data-x')) + 30;
+      let newY = parseFloat(el.getAttribute('data-y')) + 30;
+      
+      clone.setAttribute('data-x', newX);
+      clone.setAttribute('data-y', newY);
+      updateTransform(clone);
+      
+      // Reattach interactions universally to all cloned pieces (groups and polygons)
+      clone.addEventListener('pointerdown', handleShapeInteraction);
+      Array.from(clone.querySelectorAll('polygon, g.shape-group')).forEach(child => {
+        child.addEventListener('pointerdown', handleShapeInteraction);
+      });
+      
+      canvas.appendChild(clone);
+      newSelection.add(clone);
+    });
+    
+    clearSelection();
+    newSelection.forEach(el => {
+      selectedElements.add(el);
+      el.classList.add('selected');
+    });
+    setMode('move');
+  }
+
+  function rotateSelected(degrees) {
+    if (selectedElements.size === 0) return;
+    saveState(); 
+    selectedElements.forEach(el => {
+      let currentAngle = parseFloat(el.getAttribute('data-angle')) || 0;
+      el.setAttribute('data-angle', currentAngle + degrees);
+      updateTransform(el);
+      checkAndApplySnap(el);
+    });
+  }
+
+  function updateTransform(el) {
+    const x = el.getAttribute('data-x');
+    const y = el.getAttribute('data-y');
+    const angle = el.getAttribute('data-angle');
+    el.setAttribute("transform", `translate(${x}, ${y}) rotate(${angle})`);
+  }
+
+  function clearCanvas() {
+    if (canvas.querySelectorAll('.shape').length === 0) return;
+    saveState(); 
+    Array.from(canvas.querySelectorAll('.shape')).forEach(el => el.remove());
+    selectedElements.clear();
+  }
+
+  // --- MULTI-TOUCH GLOBAL GESTURE TRACKING ---
+
+  // Capture phase on container ensuring we track ALL fingers, even on shapes
+  canvasContainer.addEventListener('pointerdown', (evt) => {
+    activePointers.set(evt.pointerId, evt);
+    
+    if (activePointers.size === 2) {
+      isPanning = false; // Cancel pan
+      
+      // Cancel drag if zooming overrides it
+      if (isDragging && activeDragElement) {
+        isDragging = false;
+        if (activeDragElement.hasPointerCapture(evt.pointerId)) {
+           activeDragElement.releasePointerCapture(evt.pointerId);
+        }
+        activeDragElement = null;
+      }
+
+      // Initialize Pinch Data
+      let pts = Array.from(activePointers.values());
+      initialPinchDistance = Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY);
+      initialViewBox = { vX, vY, vW, vH };
+      
+      // Lock zoom onto exact center of the pinch
+      let cx = (pts[0].clientX + pts[1].clientX) / 2;
+      let cy = (pts[0].clientY + pts[1].clientY) / 2;
+      let CTM = canvas.getScreenCTM();
+      initialPinchCenter = { x: (cx - CTM.e) / CTM.a, y: (cy - CTM.f) / CTM.d };
+    }
+  }, { capture: true });
+
+  // Handle single-finger panning on background
+  canvas.addEventListener('pointerdown', (evt) => {
+    if (evt.target === canvas) {
+      clearSelection();
+      if (activePointers.size === 1) { 
+        isPanning = true;
+        panStart = { x: evt.clientX, y: evt.clientY };
+        canvas.setPointerCapture(evt.pointerId);
+      }
+    }
+  });
+
+  window.addEventListener('pointermove', (evt) => {
+    if (activePointers.has(evt.pointerId)) {
+      activePointers.set(evt.pointerId, evt);
+    }
+
+    // GESTURE 1: Two-finger Pinch to Zoom
+    if (activePointers.size === 2) {
+      evt.preventDefault();
+      let pts = Array.from(activePointers.values());
+      let currentDistance = Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY);
+      
+      if (initialPinchDistance && currentDistance > 0) {
+        let scale = initialPinchDistance / currentDistance;
+        
+        if (initialViewBox.vW * scale > 15000 || initialViewBox.vW * scale < 100) return; // Prevent breaking limits
+
+        vW = initialViewBox.vW * scale;
+        vH = initialViewBox.vH * scale;
+        vX = initialPinchCenter.x - (initialPinchCenter.x - initialViewBox.vX) * scale;
+        vY = initialPinchCenter.y - (initialPinchCenter.y - initialViewBox.vY) * scale;
+        
+        canvas.setAttribute('viewBox', `${vX} ${vY} ${vW} ${vH}`);
+      }
+    } 
+    // GESTURE 2: Single-finger Drag Shape
+    else if (isDragging && activeDragElement && currentMode === 'move' && activePointers.size === 1) {
+      evt.preventDefault();
+      let pos = getMousePos(evt);
+      activeDragElement.setAttribute('data-x', pos.x - offset.x);
+      activeDragElement.setAttribute('data-y', pos.y - offset.y);
+      updateTransform(activeDragElement);
+    }
+    // GESTURE 3: Single-finger Pan Canvas Background
+    else if (isPanning && activePointers.size === 1) {
+      evt.preventDefault();
+      let dx = evt.clientX - panStart.x;
+      let dy = evt.clientY - panStart.y;
+      
+      let CTM = canvas.getScreenCTM();
+      vX -= dx / CTM.a;
+      vY -= dy / CTM.d;
+      canvas.setAttribute('viewBox', `${vX} ${vY} ${vW} ${vH}`);
+      
+      panStart = { x: evt.clientX, y: evt.clientY };
+    }
+  }, { passive: false });
+
+  // Cleanup loop when lifting fingers
+  function endGestures(evt) {
+    activePointers.delete(evt.pointerId);
+    
+    if (activePointers.size < 2) {
+      initialPinchDistance = null;
+      initialPinchCenter = null;
+      initialViewBox = null;
+    }
+    
+    if (isPanning) isPanning = false;
+
+    if (isDragging && activeDragElement) {
+      checkAndApplySnap(activeDragElement);
+      canvas.appendChild(activeDragElement); // Push to front visually on drop
+
+      if (dragStartState && dragStartState.html !== canvas.innerHTML) {
+         redoStack = []; 
+         undoStack.push(dragStartState);
+         if (undoStack.length > 50) undoStack.shift();
+      }
+      
+      if (activeDragElement.hasPointerCapture(evt.pointerId)) {
+        activeDragElement.releasePointerCapture(evt.pointerId);
+      }
+      isDragging = false; 
+      activeDragElement = null;
+      dragStartState = null;
+    }
+  }
+
+  window.addEventListener('pointerup', endGestures);
+  window.addEventListener('pointercancel', endGestures);
+</script>
+
+</body>
+</html>
